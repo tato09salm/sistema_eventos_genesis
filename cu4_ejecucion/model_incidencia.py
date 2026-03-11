@@ -83,3 +83,27 @@ def cambiar_estado(id_inc, nuevo_estado):
     except psycopg2.Error as e:
         st.error(f"Error: {e}")
         return False
+
+def update(id_incidencia, tipo_incidencia, descripcion):
+    """Actualiza el tipo y descripción de una incidencia."""
+    try:
+        execute_insert(
+            "UPDATE incidencias SET tipo_incidencia=%s, descripcion=%s WHERE id_incidencia=%s",
+            (tipo_incidencia, descripcion, id_incidencia)
+        )
+        return True
+    except psycopg2.Error as e:
+        st.error(f"Error al actualizar incidencia: {e}")
+        return False
+
+def delete(id_incidencia):
+    """Elimina una incidencia y sus detalles en cascada."""
+    try:
+        execute_insert(
+            "DELETE FROM incidencias WHERE id_incidencia=%s",
+            (id_incidencia,)
+        )
+        return True
+    except psycopg2.Error as e:
+        st.error(f"Error al eliminar incidencia: {e}")
+        return False

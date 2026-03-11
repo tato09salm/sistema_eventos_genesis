@@ -239,22 +239,125 @@ def _tab_estado_recursos(id_ev):
 
 def _tab_incidencias(id_ev, nombre_ev):
 
+    # ── inicializar estado de sesión ─────────────────────────
+    if "editing_inc_id" not in st.session_state:
+        st.session_state.editing_inc_id = None
+    if "confirm_del_inc_id" not in st.session_state:
+        st.session_state.confirm_del_inc_id = None
+
     # ─────────────────────────────────────────────────────────
-    # SECCIÓN A — Listado de incidencias
+    # SECCIÓN A — Listado con editar / eliminar
     # ─────────────────────────────────────────────────────────
     st.subheader("🔥 Incidencias del Evento")
     incidencias = model_incidencia.get_by_evento(id_ev)
 
     if incidencias:
-        df_inc = pd.DataFrame(
-            incidencias,
-            columns=["ID", "Tipo", "Descripción", "Fecha Registro", "Estado"]
-        )
-        st.dataframe(df_inc, use_container_width=True, hide_index=True)
+        for inc in incidencias:
+            inc_id, tipo, desc, fecha, estado = inc
+            badge = BADGE_INC.get(estado, "⚪")
 
-        # ─────────────────────────────────────────────────────
-        # SECCIÓN B — Reporte PDF
-        # ─────────────────────────────────────────────────────
+            with st.container(border=True):
+                col_info, col_btns = st.columns([5, 2])
+
+                with col_info:
+                    st.markdown(
+                        f"**#{inc_id}** &nbsp; `{tipo}` &nbsp; {badge} {estado}"
+                    )
+                    st.caption(
+                        f"📅 {str(fecha)[:16] if fecha else '-'}  •  "
+                        + (desc[:90] + "..." if len(desc) > 90 else desc)
+                    )
+
+                with col_btns:
+                    bc1, bc2 = st.columns(2)
+                    if bc1.button("✏️", key=f"btn_edit_{inc_id}",
+                                  help="Editar", use_container_width=True):
+                        st.session_state.editing_inc_id = inc_id
+                        st.session_state.confirm_del_inc_id = None
+                        st.rerun()
+                    if bc2.button("🗑️", key=f"btn_del_{inc_id}",
+                                  help="Eliminar", use_container_width=True):
+                        st.session_state.confirm_del_inc_id = inc_id
+                        st.session_state.editing_inc_id = None
+                        st.rerun()
+
+                # ── Formulario de edición inline ─────────────
+                if st.session_state.editing_inc_id == inc_id:
+                    with st.form(f"form_edit_inc_{inc_id}"):
+                        st.markdown("**Editar incidencia**")
+                        nuevo_tipo = st.selectbox(
+                            "Tipo", model_incidencia.TIPOS_INCIDENCIA,
+                            index=model_incidencia.TIPOS_INCIDENCIA.index(tipo)
+                            if tipo in model_incidencia.TIPOS_INCIDENCIA else 0,
+                            key=f"sel_tipo_{inc_id}",
+                        )
+                        nueva_desc = st.text_area(
+                            "Descripción", value=desc, key=f"ta_desc_{inc_id}"
+                        )
+                        ec1, ec2 = st.columns(2)
+                        guardar  = ec1.form_submit_button("💾 Guardar",
+                                                          use_container_width=True)
+                        cancelar = ec2.form_submit_button("✖ Cancelar",
+                                                          use_container_width=True)
+                    if guardar:
+                        if nueva_desc.strip():
+                            if model_incidencia.update(inc_id, nuevo_tipo, nueva_desc):
+                                st.session_state.editing_inc_id = None
+                                st.success("Incidencia actualizada.")
+                                st.rerun()
+                        else:
+                            st.error("La descripción no puede estar vacía.")
+                    if cancelar:
+                        st.session_state.editing_inc_id = None
+                        st.rerun()
+
+                # ── Confirmación de eliminación ───────────────
+                if st.session_state.confirm_del_inc_id == inc_id:
+                    st.warning(
+                        f"¿Eliminar incidencia **#{inc_id}**? "
+                        "Esta acción no se puede deshacer."
+                    )
+                    dc1, dc2 = st.columns(2)
+                    if dc1.button("✅ Sí, eliminar",
+                                  key=f"btn_del_ok_{inc_id}",
+                                  use_container_width=True):
+                        if model_incidencia.delete(inc_id):
+                            st.session_state.confirm_del_inc_id = None
+                            st.success("Incidencia eliminada.")
+                            st.rerun()
+                    if dc2.button("❌ Cancelar",
+                                  key=f"btn_del_no_{inc_id}",
+                                  use_container_width=True):
+                        st.session_state.confirm_del_inc_id = None
+                        st.rerun()
+    else:
+        st.info("No hay incidencias registradas para este evento.")
+
+    # ─────────────────────────────────────────────────────────
+    # SECCIÓN B — Registrar nueva incidencia (desplegable)
+    # ─────────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("➕ Registrar Nueva Incidencia"):
+        with st.form("form_nueva_inc"):
+            col1, col2 = st.columns(2)
+            tipo_inc = col1.selectbox("Tipo de incidencia", model_incidencia.TIPOS_INCIDENCIA)
+            desc_inc = st.text_area("Descripción de la incidencia *")
+            desc_det_ini = st.text_area("Detalle inicial / Acción tomada (opcional)")
+            if st.form_submit_button("✅ Registrar Incidencia"):
+                if not desc_inc.strip():
+                    st.error("La descripción es obligatoria.")
+                else:
+                    id_nueva = model_incidencia.create(id_ev, tipo_inc, desc_inc)
+                    if id_nueva:
+                        if desc_det_ini.strip():
+                            model_incidencia.create_detalle(id_nueva, desc_inc, desc_det_ini)
+                        st.success("Incidencia registrada exitosamente.")
+                        st.rerun()
+
+    # ─────────────────────────────────────────────────────────
+    # SECCIÓN C — Reporte PDF (al final, solo si hay datos)
+    # ─────────────────────────────────────────────────────────
+    if incidencias:
         st.divider()
         pdf_bytes = _generar_pdf_incidencias(id_ev, nombre_ev, incidencias)
         st.download_button(
@@ -264,29 +367,6 @@ def _tab_incidencias(id_ev, nombre_ev):
             mime="application/pdf",
             key="dl_pdf_inc",
         )
-    else:
-        st.info("No hay incidencias registradas para este evento.")
-
-    # ─────────────────────────────────────────────────────────
-    # SECCIÓN D — Registrar nueva incidencia
-    # ─────────────────────────────────────────────────────────
-    st.divider()
-    st.markdown("#### ➕ Registrar Nueva Incidencia")
-    with st.form("form_nueva_inc"):
-        col1, col2 = st.columns(2)
-        tipo_inc = col1.selectbox("Tipo de incidencia", model_incidencia.TIPOS_INCIDENCIA)
-        desc_inc = st.text_area("Descripción de la incidencia *")
-        desc_det_ini = st.text_area("Detalle inicial / Acción tomada (opcional)")
-        if st.form_submit_button("✅ Registrar Incidencia"):
-            if not desc_inc.strip():
-                st.error("La descripción es obligatoria.")
-            else:
-                id_nueva = model_incidencia.create(id_ev, tipo_inc, desc_inc)
-                if id_nueva:
-                    if desc_det_ini.strip():
-                        model_incidencia.create_detalle(id_nueva, desc_inc, desc_det_ini)
-                    st.success("Incidencia registrada exitosamente.")
-                    st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════
@@ -387,6 +467,106 @@ def _tab_encuestas(id_ev, ev):
                 model_encuesta.completar_encuesta(id_enc_nuevo)
                 st.success("Encuesta de satisfacción registrada y completada.")
                 st.rerun()
+
+    # ─────────────────────────────────────────────────────────
+    # SECCIÓN D — Análisis global de todos los eventos
+    # ─────────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("📊 Análisis General de Encuestas (todos los eventos)"):
+        filas_globales = execute_query(
+            """SELECT e.nombre,
+                      ROUND(AVG(enc.nivel_satisfaccion)::numeric, 2) AS promedio,
+                      COUNT(enc.id_encuesta) AS total
+               FROM encuestas enc
+               JOIN eventos e ON enc.id_evento = e.id_evento
+               GROUP BY e.id_evento, e.nombre
+               ORDER BY promedio DESC""",
+            ()
+        ) or []
+
+        if not filas_globales:
+            st.info("Aún no hay encuestas registradas en el sistema.")
+        else:
+            nombres   = [f[0] for f in filas_globales]
+            promedios = [float(f[1]) for f in filas_globales]
+            totales   = [int(f[2]) for f in filas_globales]
+
+            # ── Gráfico 1: promedio por evento ────────────────
+            colores_ev = ["#2ecc71" if p >= 4 else "#f39c12" if p >= 3 else "#e74c3c"
+                          for p in promedios]
+            fig_ev = go.Figure(go.Bar(
+                x=promedios,
+                y=nombres,
+                orientation="h",
+                marker_color=colores_ev,
+                text=[f"{p:.1f} / 5  ({t} encuesta{'s' if t != 1 else ''})"
+                      for p, t in zip(promedios, totales)],
+                textposition="auto",
+                textfont=dict(size=11),
+            ))
+            fig_ev.update_layout(
+                title="Satisfacción Promedio por Evento",
+                xaxis=dict(range=[0, 5], title="Puntuación promedio"),
+                yaxis=dict(title=""),
+                height=max(200, 60 * len(nombres) + 80),
+                margin=dict(l=10, r=10, t=50, b=20),
+            )
+            st.plotly_chart(fig_ev, use_container_width=True)
+
+            # ── Insights de texto ─────────────────────────────
+            mejor   = filas_globales[0]
+            peor    = filas_globales[-1]
+            col_t1, col_t2 = st.columns(2)
+            col_t1.success(
+                f"🏆 **Evento mejor calificado**\n\n"
+                f"**{mejor[0]}** con un promedio de **{float(mejor[1]):.1f} / 5**"
+            )
+            col_t2.error(
+                f"📉 **Evento con menor calificación**\n\n"
+                f"**{peor[0]}** con un promedio de **{float(peor[1]):.1f} / 5**"
+            )
+
+            # ── Gráfico 2: promedio por dimensión (global) ─────
+            filas_dim = execute_query(
+                """SELECT de.pregunta,
+                          ROUND(AVG(de.respuesta)::numeric, 2) AS promedio
+                   FROM detalle_encuesta de
+                   GROUP BY de.pregunta
+                   ORDER BY promedio DESC""",
+                ()
+            ) or []
+
+            if filas_dim:
+                st.markdown("---")
+                dim_nombres = [f[0] for f in filas_dim]
+                dim_vals    = [float(f[1]) for f in filas_dim]
+                colores_dim = ["#4C78A8", "#72B7B2", "#54A24B", "#EECA3B"]
+                fig_dim = go.Figure(go.Bar(
+                    x=dim_vals,
+                    y=dim_nombres,
+                    orientation="h",
+                    marker_color=colores_dim[:len(dim_nombres)],
+                    text=[f"{v:.1f} / 5" for v in dim_vals],
+                    textposition="auto",
+                    textfont=dict(size=11),
+                ))
+                fig_dim.update_layout(
+                    title="Promedio por Dimensión (todos los eventos)",
+                    xaxis=dict(range=[0, 5], title="Puntuación promedio"),
+                    yaxis=dict(title=""),
+                    height=250,
+                    margin=dict(l=10, r=10, t=50, b=20),
+                )
+                st.plotly_chart(fig_dim, use_container_width=True)
+
+                mejor_dim = filas_dim[0]
+                peor_dim  = filas_dim[-1]
+                st.info(
+                    f"✅ Dimensión con **mejor** desempeño: "
+                    f"**{mejor_dim[0]}** ({float(mejor_dim[1]):.1f} / 5)  —  "
+                    f"Dimensión con **menor** desempeño: "
+                    f"**{peor_dim[0]}** ({float(peor_dim[1]):.1f} / 5)"
+                )
 
 
 # ══════════════════════════════════════════════════════════════
