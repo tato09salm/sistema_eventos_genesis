@@ -19,7 +19,7 @@ def get_all():
 def get_activos():
     try:
         return execute_query(
-            "SELECT id_evento, nombre, estado FROM eventos WHERE estado NOT IN ('Cerrada','Cancelada') ORDER BY nombre"
+            "SELECT id_evento, nombre, estado FROM eventos WHERE estado <> 'Cerrada' ORDER BY nombre"
         ) or []
     except psycopg2.Error as e:
         st.error(f"Error: {e}")

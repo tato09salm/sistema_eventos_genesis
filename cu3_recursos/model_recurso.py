@@ -5,10 +5,27 @@ from database.connection import execute_query, execute_query_one, execute_insert
 TIPOS_RECURSO = ['Material', 'Logístico', 'Personal', 'Tecnológico', 'Otro']
 ESTADOS_RECURSO = ['Disponible', 'Asignado', 'No Disponible', 'Mantenimiento']
 
+@st.cache_data(ttl=60)
+def _tiene_cantidad_disponible():
+    try:
+        row = execute_query_one(
+            "SELECT 1 FROM information_schema.columns WHERE table_name='recursos' AND column_name='cantidad_disponible'"
+        )
+        return bool(row)
+    except psycopg2.Error:
+        return False
+
 def get_all():
     try:
+        if _tiene_cantidad_disponible():
+            return execute_query(
+                """SELECT r.id_recurso, r.nombre, r.tipo_recurso, r.cantidad, r.cantidad_disponible, r.estado,
+                          COALESCE(p.nombre,'—') AS proveedor
+                   FROM recursos r LEFT JOIN proveedores p ON r.id_proveedor=p.id_proveedor
+                   ORDER BY r.id_recurso"""
+            ) or []
         return execute_query(
-            """SELECT r.id_recurso, r.nombre, r.tipo_recurso, r.cantidad, r.cantidad_disponible, r.estado,
+            """SELECT r.id_recurso, r.nombre, r.tipo_recurso, r.cantidad, r.cantidad AS cantidad_disponible, r.estado,
                       COALESCE(p.nombre,'—') AS proveedor
                FROM recursos r LEFT JOIN proveedores p ON r.id_proveedor=p.id_proveedor
                ORDER BY r.id_recurso"""
@@ -29,8 +46,13 @@ def get_by_id(id_recurso):
 
 def get_disponibles_por_tipo(tipo_recurso):
     try:
+        if _tiene_cantidad_disponible():
+            return execute_query(
+                "SELECT id_recurso, nombre, tipo_recurso, cantidad_disponible FROM recursos WHERE estado='Disponible' AND tipo_recurso=%s AND cantidad_disponible > 0",
+                (tipo_recurso,)
+            ) or []
         return execute_query(
-            "SELECT id_recurso, nombre, tipo_recurso, cantidad, cantidad_disponible FROM recursos WHERE estado='Disponible' AND tipo_recurso=%s AND cantidad_disponible > 0",
+            "SELECT id_recurso, nombre, tipo_recurso, cantidad FROM recursos WHERE estado='Disponible' AND tipo_recurso=%s AND cantidad > 0",
             (tipo_recurso,)
         ) or []
     except psycopg2.Error as e:
@@ -39,10 +61,16 @@ def get_disponibles_por_tipo(tipo_recurso):
 
 def create(nombre, tipo_recurso, cantidad, estado, id_proveedor=None):
     try:
-        execute_insert(
-            "INSERT INTO recursos (nombre, tipo_recurso, cantidad, cantidad_disponible, estado, id_proveedor) VALUES (%s,%s,%s,%s,%s,%s)",
-            (nombre, tipo_recurso, cantidad, cantidad, estado, id_proveedor)
-        )
+        if _tiene_cantidad_disponible():
+            execute_insert(
+                "INSERT INTO recursos (nombre, tipo_recurso, cantidad, cantidad_disponible, estado, id_proveedor) VALUES (%s,%s,%s,%s,%s,%s)",
+                (nombre, tipo_recurso, cantidad, cantidad, estado, id_proveedor)
+            )
+        else:
+            execute_insert(
+                "INSERT INTO recursos (nombre, tipo_recurso, cantidad, estado, id_proveedor) VALUES (%s,%s,%s,%s,%s)",
+                (nombre, tipo_recurso, cantidad, estado, id_proveedor)
+            )
         return True
     except psycopg2.Error as e:
         st.error(f"Error: {e}")

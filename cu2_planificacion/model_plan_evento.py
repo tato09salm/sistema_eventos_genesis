@@ -65,5 +65,9 @@ def cambiar_estado(id_plan, nuevo_estado):
         return False
 
 def delete(id_plan):
-    st.warning("No se pueden eliminar planes; cambiar estado a Rechazado.")
-    return False
+    try:
+        execute_insert("DELETE FROM plan_evento WHERE id_plan_evento=%s", (id_plan,))
+        return True
+    except psycopg2.Error as e:
+        st.error(f"Error al eliminar plan: {e}")
+        return False

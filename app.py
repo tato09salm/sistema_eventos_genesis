@@ -73,6 +73,8 @@ with st.sidebar:
         st.rerun()
 
 # ── Enrutar a la página seleccionada ─────────────────────────
+st.session_state["_page_css"] = ""
+
 if pagina == "dashboard":
     from shared.page_dashboard import show
     show()
@@ -104,3 +106,5 @@ elif pagina == "secretaria":
 elif pagina == "admin":
     from shared.page_admin import show
     show()
+
+st.markdown(st.session_state.get("_page_css", ""), unsafe_allow_html=True)

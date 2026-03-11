@@ -67,8 +67,12 @@ def update(id_cot, monto, descripcion):
 
 def delete(id_cot):
     try:
-        execute_insert("DELETE FROM cotizacion_proveedor WHERE id_cotizacion=%s AND estado='Pendiente'", (id_cot,))
-        return True
+        rows = execute_query(
+            "DELETE FROM cotizacion_proveedor WHERE id_cotizacion=%s AND estado='Pendiente'",
+            (id_cot,),
+            fetch=False,
+        )
+        return bool(rows and rows > 0)
     except psycopg2.Error as e:
         st.error(f"Error: {e}")
         return False
