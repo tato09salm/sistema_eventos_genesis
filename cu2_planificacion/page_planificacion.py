@@ -7,7 +7,7 @@ from fpdf import FPDF
 from auth.roles import requiere_rol, check_rol
 from cu2_planificacion import model_evento, model_plan_evento, model_requerimiento, model_cotizacion
 from cu3_recursos import model_proveedor, model_recurso, model_orden_compra
-from shared.utils import format_currency
+from shared.utils import format_currency, exportar_pdf
 
 def show():
     requiere_rol(['Administrador', 'Jefe de Planificación', 'Jefe de Eventos'])
@@ -248,6 +248,11 @@ def show():
             reqs = model_requerimiento.get_by_evento(id_ev_r)
             if reqs:
                 st.subheader("Requerimientos registrados")
+                df_req = pd.DataFrame(reqs, columns=["ID", "Descripción", "Tipo", "Cantidad"])
+                st.dataframe(df_req, use_container_width=True)
+                exportar_pdf(f"Requerimientos - Evento {id_ev_r}", df_req.columns.tolist(), reqs, f"requerimientos_evento_{id_ev_r}.pdf")
+                
+                st.divider()
                 hdr_r = st.columns([1, 5, 2, 2, 2])
                 hdr_r[0].markdown("**ID**")
                 hdr_r[1].markdown("**Descripción**")
